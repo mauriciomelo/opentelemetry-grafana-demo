@@ -1,0 +1,102 @@
+version: "3.7"
+
+services:
+  next-app:
+    image: "node:19-bullseye"
+    working_dir: /home/node/app
+    command:
+      - /bin/sh
+      - -c
+      - |
+        npm install
+        npm run dev -- -p 3030
+    volumes:
+      - ./next-app:/home/node/app
+      - /home/node/app/node_modules
+    ports:
+      - 3030:3030
+    depends_on: 
+      - petstore-api
+  # Observability services
+  petstore-api:
+    image: "node:19-bullseye"
+    user: "node"
+    working_dir: /home/node/app
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - ./petstore-api/:/home/node/app
+      - ./data/logs/petstore-api/:/usr/api/data/
+    ports:
+      - "3002:3002"
+      - "9465:9465"
+    command: "npm run dev"
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "5775:5775/udp"
+      - "6831:6831/udp"
+      - "6832:6832/udp"
+      - "5778:5778"
+      - "16686:16686"
+      - "14268:14268"
+      - "9411:9411"
+  prometheus:
+    image: prom/prometheus:latest
+    user: root
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - 9090:9090
+
+  promtail:
+    image: grafana/promtail
+    volumes:
+      - ./config/promtail/promtail-config.yaml:/etc/promtail/promtail-config.yaml
+      - ./data/logs/:/usr/data/logs
+    command: -config.file=/etc/promtail/promtail-config.yaml
+    depends_on:
+      - petstore-api
+      - loki
+
+  loki:
+    image: grafana/loki
+    ports:
+      - 3100:3100
+    volumes:
+      - ./config/loki/loki-config.yaml:/etc/loki/loki-config.yaml
+      - ./data/loki/data:/data/loki
+    command: -config.file=/etc/loki/loki-config.yaml
+  
+  otel-collector:
+    image: otel/opentelemetry-collector
+    restart: always
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./config/otel-collector/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "1888:1888"   # pprof extension
+      - "8888:8888"   # Prometheus metrics exposed by the collector
+      - "8889:8889"   # Prometheus exporter metrics
+      - "13133:13133" # health_check extension
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP http receiver
+      - "55679:55679" # zpages extension
+    depends_on:
+      - jaeger
+
+  grafana:
+    image: grafana/grafana:main
+    environment: 
+      # Disable authentication
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_NAME=Main Org.
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./config/provisioning/:/etc/grafana/provisioning
+    ports:
+      - 3000:3000
