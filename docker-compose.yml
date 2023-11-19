@@ -12,7 +12,6 @@ services:
         npm run dev -- -p 3030
     volumes:
       - ./next-app:/home/node/app
-      - /home/node/app/node_modules
     ports:
       - 3030:3030
     depends_on: 
@@ -20,7 +19,6 @@ services:
   # Observability services
   petstore-api:
     image: "node:19-bullseye"
-    user: "node"
     working_dir: /home/node/app
     environment:
       - NODE_ENV=development
@@ -30,7 +28,12 @@ services:
     ports:
       - "3002:3002"
       - "9465:9465"
-    command: "npm run dev"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        npm install
+        npm run dev
   jaeger:
     image: jaegertracing/all-in-one:latest
     ports:
